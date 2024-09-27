@@ -17,6 +17,7 @@ nginx >= **1.24.0** is supported.
 $ git clone https://github.com/WSandwitch/nginx_xproxy_module
 
 $ cd nginx_dir
+$ patch -p1 < /path/to/nginx_xproxy_module/http/nginx_1.24.0.patch
 # See http://nginx.org/en/docs/configure.html for more configuration options
 $ ./configure [other params] --add-dynamic-module=/path/to/nginx_xproxy_module/http --add-dynamic-module=/path/to/nginx_xproxy_module/stream
 
