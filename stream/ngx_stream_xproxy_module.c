@@ -136,6 +136,13 @@ static ngx_conf_deprecated_t  ngx_conf_deprecated_xproxy_upstream_buffer = {
 
 static ngx_command_t  ngx_stream_xproxy_commands[] = {
 
+    { ngx_string("xproxy_via"),
+      NGX_STREAM_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_stream_xproxy_via,
+      NGX_STREAM_SRV_CONF_OFFSET,
+      0,
+      NULL },
+
     { ngx_string("xproxy_pass"),
       NGX_STREAM_SRV_CONF|NGX_CONF_TAKE1,
       ngx_stream_xproxy_pass,
@@ -2350,6 +2357,10 @@ ngx_stream_xproxy_set_ssl(ngx_conf_t *cf, ngx_stream_xproxy_srv_conf_t *pscf)
 
 #endif
 
+static char *
+ngx_stream_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
+    return NGX_CONF_OK;
+}
 
 static char *
 ngx_stream_xproxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
