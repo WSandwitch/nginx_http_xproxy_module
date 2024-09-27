@@ -5,6 +5,7 @@ An extended fork of `nginx_http_proxy_module` and `nginx_stream_proxy_module` mo
 New features:
 - http connection over socks proxy
 
+Inspired of [socks-nginx-module](https://github.com/dannote/socks-nginx-module) by Dannote.
 
 ## Building
 
