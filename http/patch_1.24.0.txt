@@ -1,0 +1,43 @@
+diff -Naur nginx-1.24.0_/src/http/ngx_http_upstream.c nginx-1.24.0/src/http/ngx_http_upstream.c
+--- nginx-1.24.0_/src/http/ngx_http_upstream.c	2024-09-25 17:28:58.520260825 +0300
++++ nginx-1.24.0/src/http/ngx_http_upstream.c	2024-09-27 12:03:57.659681236 +0300
+@@ -1646,6 +1646,10 @@
+         return;
+     }
+ 
++    if (u->after_connect_handler && u->after_connect_handler(r,u, ngx_http_upstream_next, ngx_http_upstream_finalize_request)) {
++        return;
++    }
++
+ #if (NGX_HTTP_SSL)
+ 
+     if (u->ssl && c->ssl == NULL) {
+@@ -2304,6 +2308,10 @@
+         return;
+     }
+ 
++    if (u->after_connect_handler && u->after_connect_handler(r,u, ngx_http_upstream_next, ngx_http_upstream_finalize_request)) {
++        return;
++    }
++
+ #if (NGX_HTTP_SSL)
+ 
+     if (u->ssl && c->ssl == NULL) {
+diff -Naur nginx-1.24.0_/src/http/ngx_http_upstream.h nginx-1.24.0/src/http/ngx_http_upstream.h
+--- nginx-1.24.0_/src/http/ngx_http_upstream.h	2024-09-25 17:28:58.524260887 +0300
++++ nginx-1.24.0/src/http/ngx_http_upstream.h	2024-09-26 17:45:56.419467616 +0300
+@@ -317,10 +317,14 @@
+ typedef void (*ngx_http_upstream_handler_pt)(ngx_http_request_t *r,
+     ngx_http_upstream_t *u);
+ 
++typedef int (*ngx_http_upstream_handler_i_pt)(ngx_http_request_t *r,
++    ngx_http_upstream_t *u, void*, void*);
++
+ 
+ struct ngx_http_upstream_s {
+     ngx_http_upstream_handler_pt     read_event_handler;
+     ngx_http_upstream_handler_pt     write_event_handler;
++    ngx_http_upstream_handler_i_pt   after_connect_handler;
+ 
+     ngx_peer_connection_t            peer;
+ 
