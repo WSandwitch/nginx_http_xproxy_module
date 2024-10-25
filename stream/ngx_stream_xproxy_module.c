@@ -86,6 +86,7 @@ static u_char *ngx_stream_xproxy_log_error(ngx_log_t *log, u_char *buf,
 static void *ngx_stream_xproxy_create_srv_conf(ngx_conf_t *cf);
 static char *ngx_stream_xproxy_merge_srv_conf(ngx_conf_t *cf, void *parent,
     void *child);
+static char *ngx_stream_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_stream_xproxy_pass(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_stream_xproxy_bind(ngx_conf_t *cf, ngx_command_t *cmd,

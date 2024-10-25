@@ -1402,8 +1402,32 @@ ngx_http_xproxy_eval(ngx_http_request_t *r, ngx_http_xproxy_ctx_t *ctx,
         return NGX_ERROR;
     }
     
+    printf("plcf->via.used %d\n", plcf->via.used);
     //set proxy host as current host
     if (plcf->via.used){
+        ngx_str_t             socks;
+        printf("plcf->via.lengths %p\n", plcf->via.lengths);
+        if (plcf->via.lengths){ //compile vars from xproxy_via
+            if (ngx_http_script_run(r, &socks, plcf->via.lengths->elts, 0,
+                                plcf->via.values->elts)
+                == NULL){
+                return NGX_ERROR;
+            }
+            printf("conencting to %s\n", socks.data);
+            plcf->via.url = socks;
+
+            if (ngx_strncasecmp(socks.data, (u_char *) "socks4://", 9) == 0) {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "only sock5 permitted");
+                return NGX_ERROR;
+                plcf->via.ver=4;
+            } else if (ngx_strncasecmp(socks.data, (u_char *) "socks5://", 9) == 0) {
+                plcf->via.ver=5;
+            } else {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "only sock5 permitted");
+                return NGX_ERROR;
+            }
+        }
+
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                        "set socks url to upstream");
         //save for pass to socks 
@@ -4181,6 +4205,8 @@ ngx_http_xproxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 #endif
     }
 
+//    conf->via = prev->via;
+
     if (clcf->lmt_excpt && clcf->handler == NULL
         && (conf->upstream.upstream || conf->xproxy_lengths))
     {
@@ -4449,7 +4475,6 @@ ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     n = ngx_http_script_variables_count(url);
 
     if (n) {
-        return "vars in proxy_via not available yet";
         ngx_memzero(&sc, sizeof(ngx_http_script_compile_t));
 
         sc.cf = cf;
