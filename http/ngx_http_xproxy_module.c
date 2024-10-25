@@ -1402,18 +1402,15 @@ ngx_http_xproxy_eval(ngx_http_request_t *r, ngx_http_xproxy_ctx_t *ctx,
         return NGX_ERROR;
     }
     
-    printf("plcf->via.used %d\n", plcf->via.used);
     //set proxy host as current host
     if (plcf->via.used){
         ngx_str_t             socks;
-        printf("plcf->via.lengths %p\n", plcf->via.lengths);
         if (plcf->via.lengths){ //compile vars from xproxy_via
             if (ngx_http_script_run(r, &socks, plcf->via.lengths->elts, 0,
                                 plcf->via.values->elts)
                 == NULL){
                 return NGX_ERROR;
             }
-            printf("conencting to %s\n", socks.data);
             plcf->via.url = socks;
 
             if (ngx_strncasecmp(socks.data, (u_char *) "socks4://", 9) == 0) {
@@ -4205,7 +4202,9 @@ ngx_http_xproxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 #endif
     }
 
-//    conf->via = prev->via;
+    if (prev->via.used){
+        conf->via = prev->via;
+    }
 
     if (clcf->lmt_excpt && clcf->handler == NULL
         && (conf->upstream.upstream || conf->xproxy_lengths))
