@@ -27,6 +27,8 @@ $ make
 
 ## Configuring
 
+## http
+
 Sample reverse proxy over SOCKS5 proxy configuration:
 
 ```
@@ -54,3 +56,7 @@ location /ip {
   xproxy_pass http://ipinfo.io;
 }
 ```
+
+## stream
+
+Not ready yet

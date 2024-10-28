@@ -110,8 +110,8 @@ typedef struct {
     ngx_str_t host;
     uint16_t port;
     char ver;
-    char no_port:1;
-    char used:1;
+    unsigned no_port:1;
+    unsigned used:1;
 } ngx_xproxy_socks_t;
 
 typedef struct {
@@ -1126,8 +1126,10 @@ ngx_http_socks_upstream_read_handler(ngx_http_request_t *r,
         buf = ngx_pnalloc(r->pool, 5);
         c->recv(c, buf, 5);
 
+        printf("%d %d %d\n", buf[0], buf[1], buf[2]);
         if (buf[0] != NGX_HTTP_SOCKS_VERSION || buf[1] ||
                 buf[2] != NGX_HTTP_SOCKS_RESERVED) {
+            printf("%d\n", buf[1]);
             if (buf[1] > sizeof(ngx_http_socks_errors)) {
                 buf[1] = 0;
             }
@@ -1443,8 +1445,10 @@ ngx_http_xproxy_eval(ngx_http_request_t *r, ngx_http_xproxy_ctx_t *ctx,
         //copy from pass to socks 
         u_char * pos = (u_char*)strchr((void*)url.host.data, '/');
         uint32_t len=pos?(pos-url.host.data):(uint32_t)strlen((void*)url.host.data);
-        if (!plcf->socks.host.data)
-            plcf->socks.host.data=ngx_pcalloc(r->pool, len+1);
+        if (!plcf->socks.host.data){
+ //           plcf->socks.host.data=ngx_calloc(r->pool, len+1);
+            plcf->socks.host.data=ngx_calloc(len+1, r->connection->log);
+        }
         strncpy((void*)plcf->socks.host.data, (void*)url.host.data, len);
         plcf->socks.host.len=len;
         
@@ -4227,6 +4231,7 @@ ngx_http_xproxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     if (prev->socks.used){
         conf->socks = prev->socks;
+        conf->socks.host.data=0;
     }
 
     if (clcf->lmt_excpt && clcf->handler == NULL
