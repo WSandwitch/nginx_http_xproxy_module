@@ -163,6 +163,7 @@ typedef struct {
     ngx_array_t                   *ssl_conf_commands;
 #endif
     ngx_xproxy_via_t via;
+    unsigned resolve:1;
 } ngx_http_xproxy_loc_conf_t;
 
 typedef void (*ngx_http_upstream_next_f)(ngx_http_request_t *r,
@@ -260,6 +261,8 @@ static char *ngx_http_xproxy_pass(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
+static char *ngx_http_xproxy_resolve(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 static char *ngx_http_xproxy_redirect(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_xproxy_cookie_domain(ngx_conf_t *cf, ngx_command_t *cmd,
@@ -350,6 +353,13 @@ ngx_module_t  ngx_http_xproxy_module;
 
 
 static ngx_command_t  ngx_http_xproxy_commands[] = {
+
+    { ngx_string("xproxy_resolve"),
+      NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF,
+      ngx_http_xproxy_resolve,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
 
     { ngx_string("xproxy_via"),
       NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE1,
@@ -1002,6 +1012,9 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
     ngx_uint_t             len, port;
     ngx_http_xproxy_ctx_t  *pctx;
 
+    ngx_http_xproxy_loc_conf_t   *plcf;
+    
+    plcf = ngx_http_get_module_loc_conf(r, ngx_http_xproxy_module);
     pctx = ngx_http_get_module_ctx(r, ngx_http_xproxy_module);
     c = u->peer.connection;
 
@@ -1032,7 +1045,7 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
                        "http socks connect");
 
-        if (!pctx->vars.host_header.len || pctx->vars.host_header.len > 0xFF) {
+        if (!plcf->via.host.len || plcf->via.host.len > 0xFF) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                           "invalid target host");
             ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
@@ -1041,7 +1054,7 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
 
         port = ngx_atoi(pctx->vars.port.data, pctx->vars.port.len);
 
-        len = pctx->vars.host_header.len + 7;
+        len = plcf->via.host.len + 7;
 
         buf = ngx_pnalloc(r->pool, len);
 
@@ -1049,9 +1062,9 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
         buf[1] = NGX_HTTP_SOCKS_CMD_CONNECT;
         buf[2] = NGX_HTTP_SOCKS_RESERVED;
         buf[3] = NGX_HTTP_SOCKS_ADDR_DOMAIN_NAME;
-        buf[4] = (u_char) pctx->vars.host_header.len;
+        buf[4] = (u_char) plcf->via.host.len;
         *(u_short*) (buf + len - 2) = ntohs(port);
-        ngx_memcpy(buf + 5, pctx->vars.host_header.data, pctx->vars.host_header.len);
+        ngx_memcpy(buf + 5, plcf->via.host.data, plcf->via.host.len);
 
         c->send(c, buf, len);
 
@@ -1427,8 +1440,18 @@ ngx_http_xproxy_eval(ngx_http_request_t *r, ngx_http_xproxy_ctx_t *ctx,
 
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                        "set socks url to upstream");
-        //save for pass to socks 
-        plcf->via.host = url.host;
+        //copy from pass to socks 
+        u_char * pos = (u_char*)strchr((void*)url.host.data, '/');
+        uint32_t len=pos?(pos-url.host.data):(uint32_t)strlen((void*)url.host.data);
+        if (!plcf->via.host.data)
+            plcf->via.host.data=ngx_pcalloc(r->pool, len+1);
+        strncpy((void*)plcf->via.host.data, (void*)url.host.data, len);
+        plcf->via.host.len=len;
+        
+        //if (pos){
+        //    plcf->via.host.len = pos-plcf->via.host.data;
+        //    *pos=0;
+        //}
         plcf->via.port = (in_port_t) (url.no_port ? port : url.port);
         plcf->via.no_port = url.no_port;
 
@@ -4449,6 +4472,21 @@ ngx_http_xproxy_init_headers(ngx_conf_t *cf, ngx_http_xproxy_loc_conf_t *conf,
 
 
 static char *
+ngx_http_xproxy_resolve(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_xproxy_loc_conf_t *plcf = conf;
+
+    if (plcf->upstream.upstream || plcf->xproxy_lengths) {
+        return "must be before proxy_pass";
+    }
+
+    plcf->resolve=1;
+    
+    return NGX_CONF_OK;
+}
+
+
+static char *
 ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_xproxy_loc_conf_t *plcf = conf;
@@ -4457,7 +4495,7 @@ ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                  n;
     ngx_http_script_compile_t   sc;
     
-    if (plcf->via.used || plcf->via.lengths) {
+    if (plcf->via.used || plcf->via.lengths || plcf->resolve) {
         return "is duplicate";
     }
 
