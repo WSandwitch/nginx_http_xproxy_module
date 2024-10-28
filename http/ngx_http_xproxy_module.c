@@ -112,7 +112,7 @@ typedef struct {
     char ver;
     char no_port:1;
     char used:1;
-} ngx_xproxy_via_t;
+} ngx_xproxy_socks_t;
 
 typedef struct {
     ngx_http_upstream_conf_t       upstream;
@@ -162,7 +162,7 @@ typedef struct {
     ngx_str_t                      ssl_crl;
     ngx_array_t                   *ssl_conf_commands;
 #endif
-    ngx_xproxy_via_t via;
+    ngx_xproxy_socks_t socks;
     unsigned resolve:1;
 } ngx_http_xproxy_loc_conf_t;
 
@@ -259,7 +259,7 @@ static ngx_int_t ngx_http_xproxy_init_headers(ngx_conf_t *cf,
 
 static char *ngx_http_xproxy_pass(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
-static char *ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd,
+static char *ngx_http_xproxy_socks(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_xproxy_resolve(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
@@ -361,9 +361,9 @@ static ngx_command_t  ngx_http_xproxy_commands[] = {
       0,
       NULL },
 
-    { ngx_string("xproxy_via"),
+    { ngx_string("xproxy_socks"),
       NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE1,
-      ngx_http_xproxy_via,
+      ngx_http_xproxy_socks,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
@@ -953,7 +953,7 @@ static ngx_http_variable_t  ngx_http_xproxy_vars[] = {
       ngx_http_xproxy_add_x_forwarded_for_variable, 0, NGX_HTTP_VAR_NOHASH, 0 },
 
 #if 0
-    { ngx_string("xproxy_add_via"), NULL, NULL, 0, NGX_HTTP_VAR_NOHASH, 0 },
+    { ngx_string("xproxy_add_socks"), NULL, NULL, 0, NGX_HTTP_VAR_NOHASH, 0 },
 #endif
 
     { ngx_string("xproxy_internal_body_length"), NULL,
@@ -1045,7 +1045,7 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
                        "http socks connect");
 
-        if (!plcf->via.host.len || plcf->via.host.len > 0xFF) {
+        if (!plcf->socks.host.len || plcf->socks.host.len > 0xFF) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                           "invalid target host");
             ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
@@ -1054,7 +1054,7 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
 
         port = ngx_atoi(pctx->vars.port.data, pctx->vars.port.len);
 
-        len = plcf->via.host.len + 7;
+        len = plcf->socks.host.len + 7;
 
         buf = ngx_pnalloc(r->pool, len);
 
@@ -1062,9 +1062,9 @@ ngx_http_socks_upstream_write_handler(ngx_http_request_t *r,
         buf[1] = NGX_HTTP_SOCKS_CMD_CONNECT;
         buf[2] = NGX_HTTP_SOCKS_RESERVED;
         buf[3] = NGX_HTTP_SOCKS_ADDR_DOMAIN_NAME;
-        buf[4] = (u_char) plcf->via.host.len;
+        buf[4] = (u_char) plcf->socks.host.len;
         *(u_short*) (buf + len - 2) = ntohs(port);
-        ngx_memcpy(buf + 5, plcf->via.host.data, plcf->via.host.len);
+        ngx_memcpy(buf + 5, plcf->socks.host.data, plcf->socks.host.len);
 
         c->send(c, buf, len);
 
@@ -1416,22 +1416,22 @@ ngx_http_xproxy_eval(ngx_http_request_t *r, ngx_http_xproxy_ctx_t *ctx,
     }
     
     //set proxy host as current host
-    if (plcf->via.used){
+    if (plcf->socks.used){
         ngx_str_t             socks;
-        if (plcf->via.lengths){ //compile vars from xproxy_via
-            if (ngx_http_script_run(r, &socks, plcf->via.lengths->elts, 0,
-                                plcf->via.values->elts)
+        if (plcf->socks.lengths){ //compile vars from xproxy_socks
+            if (ngx_http_script_run(r, &socks, plcf->socks.lengths->elts, 0,
+                                plcf->socks.values->elts)
                 == NULL){
                 return NGX_ERROR;
             }
-            plcf->via.url = socks;
+            plcf->socks.url = socks;
 
             if (ngx_strncasecmp(socks.data, (u_char *) "socks4://", 9) == 0) {
                 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "only sock5 permitted");
                 return NGX_ERROR;
-                plcf->via.ver=4;
+                plcf->socks.ver=4;
             } else if (ngx_strncasecmp(socks.data, (u_char *) "socks5://", 9) == 0) {
-                plcf->via.ver=5;
+                plcf->socks.ver=5;
             } else {
                 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "only sock5 permitted");
                 return NGX_ERROR;
@@ -1443,22 +1443,22 @@ ngx_http_xproxy_eval(ngx_http_request_t *r, ngx_http_xproxy_ctx_t *ctx,
         //copy from pass to socks 
         u_char * pos = (u_char*)strchr((void*)url.host.data, '/');
         uint32_t len=pos?(pos-url.host.data):(uint32_t)strlen((void*)url.host.data);
-        if (!plcf->via.host.data)
-            plcf->via.host.data=ngx_pcalloc(r->pool, len+1);
-        strncpy((void*)plcf->via.host.data, (void*)url.host.data, len);
-        plcf->via.host.len=len;
+        if (!plcf->socks.host.data)
+            plcf->socks.host.data=ngx_pcalloc(r->pool, len+1);
+        strncpy((void*)plcf->socks.host.data, (void*)url.host.data, len);
+        plcf->socks.host.len=len;
         
         //if (pos){
-        //    plcf->via.host.len = pos-plcf->via.host.data;
+        //    plcf->socks.host.len = pos-plcf->socks.host.data;
         //    *pos=0;
         //}
-        plcf->via.port = (in_port_t) (url.no_port ? port : url.port);
-        plcf->via.no_port = url.no_port;
+        plcf->socks.port = (in_port_t) (url.no_port ? port : url.port);
+        plcf->socks.no_port = url.no_port;
 
         ngx_memzero(&url, sizeof(ngx_url_t));
 
-        url.url.len = plcf->via.url.len - 9;
-        url.url.data = plcf->via.url.data + 9;
+        url.url.len = plcf->socks.url.len - 9;
+        url.url.data = plcf->socks.url.data + 9;
         url.default_port = port;
         url.uri_part = 1;
         url.no_resolve = 1;
@@ -4225,8 +4225,8 @@ ngx_http_xproxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 #endif
     }
 
-    if (prev->via.used){
-        conf->via = prev->via;
+    if (prev->socks.used){
+        conf->socks = prev->socks;
     }
 
     if (clcf->lmt_excpt && clcf->handler == NULL
@@ -4481,13 +4481,13 @@ ngx_http_xproxy_resolve(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     plcf->resolve=1;
-    
+
     return NGX_CONF_OK;
 }
 
 
 static char *
-ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_xproxy_socks(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_xproxy_loc_conf_t *plcf = conf;
 
@@ -4495,7 +4495,7 @@ ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                  n;
     ngx_http_script_compile_t   sc;
     
-    if (plcf->via.used || plcf->via.lengths || plcf->resolve) {
+    if (plcf->socks.used || plcf->socks.lengths || plcf->resolve) {
         return "is duplicate";
     }
 
@@ -4503,7 +4503,7 @@ ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "must be before proxy_pass";
     }
 
-    plcf->via.used=1;
+    plcf->socks.used=1;
 
     value = cf->args->elts;
 
@@ -4516,8 +4516,8 @@ ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         sc.cf = cf;
         sc.source = url;
-        sc.lengths = &plcf->via.lengths;
-        sc.values = &plcf->via.values;
+        sc.lengths = &plcf->socks.lengths;
+        sc.values = &plcf->socks.values;
         sc.variables = n;
         sc.complete_lengths = 1;
         sc.complete_values = 1;
@@ -4532,15 +4532,15 @@ ngx_http_xproxy_via(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (ngx_strncasecmp(url->data, (u_char *) "socks4://", 9) == 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "only sock5 permitted");
         return NGX_CONF_ERROR;
-        plcf->via.ver=4;
+        plcf->socks.ver=4;
     } else if (ngx_strncasecmp(url->data, (u_char *) "socks5://", 9) == 0) {
-        plcf->via.ver=5;
+        plcf->socks.ver=5;
     } else {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "only sock5 permitted");
         return NGX_CONF_ERROR;
     }
   
-    plcf->via.url = *url;
+    plcf->socks.url = *url;
 
     return NGX_CONF_OK;
 }
@@ -4576,7 +4576,7 @@ ngx_http_xproxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     n = ngx_http_script_variables_count(url);
 
-    if (n || plcf->via.used) {
+    if (n || plcf->socks.used) {
 
         ngx_memzero(&sc, sizeof(ngx_http_script_compile_t));
 

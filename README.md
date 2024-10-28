@@ -31,14 +31,14 @@ Sample reverse proxy over SOCKS5 proxy configuration:
 
 ```
 location / {
-  xproxy_via socks5://proxy:1080;
+  xproxy_socks socks5://proxy:1080;
   xproxy_pass http://httpbin.org/get;
 }
 ```
 
 All [ngx_http_proxy_module](http://nginx.org/en/docs/http/ngx_http_proxy_module.html) directives are supported.
 
-### xproxy_via
+### xproxy_socks
 
 Context: `http`, `server`, `location`
 
@@ -46,11 +46,11 @@ Default: `none;`
 
 Set socks proxy pass and enables connection over socks.
 
-This example will proxy requests to `ipinfo.io` via local Tor daemon:
+This example will proxy requests to `ipinfo.io` socks local Tor daemon:
 
 ```
 location /ip {
-  xproxy_via socks5://127.0.0.1:9050;
+  xproxy_socks socks5://127.0.0.1:9050;
   xproxy_pass http://ipinfo.io;
 }
 ```
